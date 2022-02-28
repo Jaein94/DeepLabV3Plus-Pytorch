@@ -55,7 +55,7 @@ def get_argparser():
     parser.add_argument("--step_size", type=int, default=10000)
     parser.add_argument("--crop_val", action='store_true', default=False,
                         help='crop validation (default: False)')
-    parser.add_argument("--batch_size", type=int, default=8, #16 default
+    parser.add_argument("--batch_size", type=int, default=2, #16 default
                         help='batch size (default: 16)')
     parser.add_argument("--val_batch_size", type=int, default=4,
                         help='batch size for validation (default: 4)')
@@ -104,11 +104,12 @@ def get_dataset(opts):
             # et.ExtResize( 512 ),
             et.ExtRandomCrop(size=(opts.crop_size, opts.crop_size)),
             #  et.ExtRandomScale((0.75, 1.0, 1.25, 1.5, 1.75, 2)),
-            # et.ExtColorJitter(brightness=0.5, contrast=0.5, saturation=0.5),
+            et.ExtColorJitter(brightness=0.5, contrast=0.5, saturation=0.5),
             et.ExtRandomHorizontalFlip(),
             et.ExtToTensor(),
-            et.ExtNormalize(mean=[0.485, 0.456, 0.406],
-                            std=[0.229, 0.224, 0.225]),
+            et.ExtNormalize(mean=[0.485, 0.456, 0.406], # 이미지넷에서 학습된 RGB 정규화 평균
+                            std=[0.229, 0.224, 0.225]), # 이미지넷에서 학습된 RGB Standard deviation 평균
+                            # ToTensor 적용시 이미지의 img = [-1,1] 사이 값을 가지게 됨 이후 img = (img - mean) /std 과정을 통해 보다 선명한 이미지 추출
         ])
 
         val_transform = et.ExtCompose([
@@ -297,8 +298,8 @@ def main():
         cur_epochs += 1
         for (images, labels) in train_loader:
             cur_itrs += 1
-
             images = images.to(device, dtype=torch.float32)
+            
             labels = labels.to(device, dtype=torch.long)
 
             optimizer.zero_grad()
@@ -338,10 +339,12 @@ def main():
                     vis.vis_table("[Val] Class IoU", val_score['Class IoU'])
 
                     for k, (img, target, lbl) in enumerate(ret_samples):
-                        img = (denorm(img) * 255).astype(np.uint8)
+                        img_norm = ((img/3 * 127.5) + 127.5).astype(np.uint8)
+                        # print(np.unique(img_norm))
+                        img_denorm = (denorm(img) * 255).astype(np.uint8)
                         target = train_dst.decode_target(target).transpose(2, 0, 1).astype(np.uint8)
                         lbl = train_dst.decode_target(lbl).transpose(2, 0, 1).astype(np.uint8)
-                        concat_img = np.concatenate((img, target, lbl), axis=2)  # concat along width
+                        concat_img = np.concatenate((img_norm, img_denorm, target, lbl), axis=2)  # concat along width
                         vis.vis_image('Sample %d' % k, concat_img)
                 model.train()
             scheduler.step()
