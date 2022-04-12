@@ -7,12 +7,13 @@ import argparse
 import numpy as np
 
 from torch.utils import data
-from datasets import VOCSegmentation, Cityscapes
+from datasets import VOCSegmentation, Cityscapes, CityscapesCoarse
 from utils import ext_transforms as et
 from metrics import StreamSegMetrics
 
 import torch
 import torch.nn as nn
+from torchvision.transforms import ToPILImage
 from utils.visualizer import Visualizer
 
 from PIL import Image
@@ -22,12 +23,12 @@ import matplotlib.pyplot as plt
 
 def get_argparser():
     parser = argparse.ArgumentParser()
-
+ 
     # Datset Options
     parser.add_argument("--data_root", type=str, default='./datasets/data/cityscapes',
                         help="path to Dataset")
     parser.add_argument("--dataset", type=str, default='cityscapes',
-                        choices=['voc', 'cityscapes'], help='Name of dataset')
+                        choices=['voc', 'cityscapes','cityscapes_coarse'], help='Name of dataset')
     parser.add_argument("--num_classes", type=int, default=None,
                         help="num classes (default: None)")
 
@@ -40,7 +41,7 @@ def get_argparser():
                         choices=available_models, help='model name')
     parser.add_argument("--separable_conv", action='store_true', default=True,
                         help="apply separable conv to decoder and aspp")
-    parser.add_argument("--output_stride", type=int, default=8, choices=[8, 16])
+    parser.add_argument("--output_stride", type=int, default=16, choices=[8, 16])
 
     # Train Options
     parser.add_argument("--test_only", action='store_true', default=False)
@@ -50,16 +51,16 @@ def get_argparser():
                         help="epoch number (default: 90k)")
     parser.add_argument("--lr", type=float, default=0.01,
                         help="learning rate (default: 0.01)")
-    parser.add_argument("--lr_policy", type=str, default='step', choices=['poly', 'step'],
+    parser.add_argument("--lr_policy", type=str, default='poly', choices=['poly', 'step'],
                         help="learning rate scheduler policy")
     parser.add_argument("--step_size", type=int, default=10000)
     parser.add_argument("--crop_val", action='store_true', default=False,
                         help='crop validation (default: False)')
-    parser.add_argument("--batch_size", type=int, default=2, #16 default
+    parser.add_argument("--batch_size", type=int, default=16, #16 default
                         help='batch size (default: 16)')
-    parser.add_argument("--val_batch_size", type=int, default=4,
+    parser.add_argument("--val_batch_size", type=int, default=1,
                         help='batch size for validation (default: 4)')
-    parser.add_argument("--crop_size", type=int, default=769)
+    parser.add_argument("--crop_size", type=int, default=513)
 
     parser.add_argument("--ckpt", default=None, type=str,
                         help="restore from checkpoint")
@@ -67,7 +68,7 @@ def get_argparser():
 
     parser.add_argument("--loss_type", type=str, default='cross_entropy',
                         choices=['cross_entropy', 'focal_loss'], help="loss type (default: False)")
-    parser.add_argument("--gpu_id", type=str, default='0',
+    parser.add_argument("--gpu_id", type=str, default='0,1',
                         help="GPU ID")
     parser.add_argument("--weight_decay", type=float, default=1e-4,
                         help='weight decay (default: 1e-4)')
@@ -85,7 +86,7 @@ def get_argparser():
                         choices=['2012_aug', '2012', '2011', '2009', '2008', '2007'], help='year of VOC')
 
     # Visdom options
-    parser.add_argument("--enable_vis", action='store_true', default=False,
+    parser.add_argument("--enable_vis", action='store_true', default=True,
                         help="use visdom for visualization")
     parser.add_argument("--vis_port", type=str, default='8097',
                         help='port for visdom')
@@ -103,7 +104,7 @@ def get_dataset(opts):
         train_transform = et.ExtCompose([
             # et.ExtResize( 512 ),
             et.ExtRandomCrop(size=(opts.crop_size, opts.crop_size)),
-            #  et.ExtRandomScale((0.75, 1.0, 1.25, 1.5, 1.75, 2)),
+            # et.ExtRandomScale((0.75, 1.0, 1.25, 1.5, 1.75, 2)),
             et.ExtColorJitter(brightness=0.5, contrast=0.5, saturation=0.5),
             et.ExtRandomHorizontalFlip(),
             et.ExtToTensor(),
@@ -123,6 +124,51 @@ def get_dataset(opts):
                                split='train', transform=train_transform)
         val_dst = Cityscapes(root=opts.data_root,
                              split='val', transform=val_transform)
+        
+    elif opts.dataset == 'cityscapes_coarse':
+        train_transform = et.ExtCompose([
+            # et.ExtResize( 512 ),
+            et.ExtRandomCrop(size=(opts.crop_size, opts.crop_size)),
+            # et.ExtRandomScale((0.75, 1.0, 1.25, 1.5, 1.75, 2)),
+            et.ExtColorJitter(brightness=0.5, contrast=0.5, saturation=0.5),
+            et.ExtRandomHorizontalFlip(),
+            et.ExtToTensor(),
+            et.ExtNormalize(mean=[0.485, 0.456, 0.406], # 이미지넷에서 학습된 RGB 정규화 평균
+                            std=[0.229, 0.224, 0.225]), # 이미지넷에서 학습된 RGB Standard deviation 평균
+                            # ToTensor 적용시 이미지의 img = [-1,1] 사이 값을 가지게 됨 이후 img = (img - mean) /std 과정을 통해 보다 선명한 이미지 추출
+        ])
+
+        val_transform = et.ExtCompose([
+            # et.ExtResize( 512 ),
+            et.ExtToTensor(),
+            et.ExtNormalize(mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225]),
+        ])
+        
+    elif opts.dataset == 'vtd':
+        train_transform = et.ExtCompose([
+            # et.ExtResize( 512 ),
+            et.ExtRandomCrop(size=(opts.crop_size, opts.crop_size)),
+            # et.ExtRandomScale((0.75, 1.0, 1.25, 1.5, 1.75, 2)),
+            et.ExtColorJitter(brightness=0.5, contrast=0.5, saturation=0.5),
+            et.ExtRandomHorizontalFlip(),
+            et.ExtToTensor(),
+            et.ExtNormalize(mean=[0.485, 0.456, 0.406], # 이미지넷에서 학습된 RGB 정규화 평균
+                            std=[0.229, 0.224, 0.225]), # 이미지넷에서 학습된 RGB Standard deviation 평균
+                            # ToTensor 적용시 이미지의 img = [-1,1] 사이 값을 가지게 됨 이후 img = (img - mean) /std 과정을 통해 보다 선명한 이미지 추출
+        ])
+
+        val_transform = et.ExtCompose([
+            # et.ExtResize( 512 ),
+            et.ExtToTensor(),
+            et.ExtNormalize(mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225]),
+        ])
+        train_dst = CityscapesCoarse(root=opts.data_root,
+                               split='train', transform=train_transform)
+        val_dst = CityscapesCoarse(root=opts.data_root,
+                             split='val', transform=val_transform)
+                
     return train_dst, val_dst
 
 
@@ -186,6 +232,8 @@ def main():
         opts.num_classes = 21
     elif opts.dataset.lower() == 'cityscapes':
         opts.num_classes = 19
+    elif opts.dataset.lower() == 'cityscapes_coarse':
+        opts.num_classes = 19
 
     # Setup visualization
     vis = Visualizer(port=opts.vis_port,
@@ -216,6 +264,7 @@ def main():
           (opts.dataset, len(train_dst), len(val_dst)))
 
     # Set up model (all models are 'constructed at network.modeling)
+    print(opts.model)
     model = network.modeling.__dict__[opts.model](num_classes=opts.num_classes, output_stride=opts.output_stride)
     if opts.separable_conv and 'plus' in opts.model:
         network.convert_to_separable_conv(model.classifier)
@@ -283,6 +332,7 @@ def main():
     vis_sample_id = np.random.randint(0, len(val_loader), opts.vis_num_samples,
                                       np.int32) if opts.enable_vis else None  # sample idxs for visualization
     denorm = utils.Denormalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # denormalization for ori images
+    tf_norm = ToPILImage()
 
     if opts.test_only:
         model.eval()
@@ -339,8 +389,11 @@ def main():
                     vis.vis_table("[Val] Class IoU", val_score['Class IoU'])
 
                     for k, (img, target, lbl) in enumerate(ret_samples):
-                        img_norm = ((img/3 * 127.5) + 127.5).astype(np.uint8)
-                        # print(np.unique(img_norm))
+                        # print(img.shape)
+                        # print(type(img))
+                        # print(np.unique(img))
+                        img_norm = img
+                        # img_norm = ((img/3 * 127.5) + 127.5).astype(np.uint8)
                         img_denorm = (denorm(img) * 255).astype(np.uint8)
                         target = train_dst.decode_target(target).transpose(2, 0, 1).astype(np.uint8)
                         lbl = train_dst.decode_target(lbl).transpose(2, 0, 1).astype(np.uint8)

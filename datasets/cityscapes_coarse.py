@@ -8,7 +8,7 @@ from PIL import Image
 import numpy as np
 
 
-class Cityscapes(data.Dataset):
+class CityscapesCoarse(data.Dataset):
     """Cityscapes <http://www.cityscapes-dataset.com/> Dataset.
     
     **Parameters:**
@@ -35,8 +35,8 @@ class Cityscapes(data.Dataset):
         CityscapesClass('parking',              9, 255, 'flat', 1, False, True, (250, 170, 160)),
         CityscapesClass('rail track',           10, 255, 'flat', 1, False, True, (230, 150, 140)),
         CityscapesClass('building',             11, 2, 'construction', 2, False, False, (70, 70, 70)),
-        CityscapesClass('wall',                 12, 3, 'construction', 2, False, True, (102, 102, 156)),
-        CityscapesClass('fence',                13, 4, 'construction', 2, False, True, (190, 153, 153)),
+        CityscapesClass('wall',                 12, 3, 'construction', 2, False, False, (102, 102, 156)),
+        CityscapesClass('fence',                13, 4, 'construction', 2, False, False, (190, 153, 153)),
         CityscapesClass('guard rail',           14, 255, 'construction', 2, False, True, (180, 165, 180)),
         CityscapesClass('bridge',               15, 255, 'construction', 2, False, True, (150, 100, 100)),
         CityscapesClass('tunnel',               16, 255, 'construction', 2, False, True, (150, 120, 90)),
@@ -52,12 +52,12 @@ class Cityscapes(data.Dataset):
         CityscapesClass('car',                  26, 13, 'vehicle', 7, True, False, (0, 0, 142)),
         CityscapesClass('truck',                27, 14, 'vehicle', 7, True, False, (0, 0, 142)),
         CityscapesClass('bus',                  28, 15, 'vehicle', 7, True, False, (0, 0, 142)),
-        CityscapesClass('caravan',              29, 255, 'vehicle', 7, True, False, (0, 0, 90)),
+        CityscapesClass('caravan',              29, 255, 'vehicle', 7, True, True, (0, 0, 90)),
         CityscapesClass('trailer',              30, 255, 'vehicle', 7, True, True, (0, 0, 110)),
         CityscapesClass('train',                31, 255, 'vehicle', 7, True, False, (0, 80, 100)),
         CityscapesClass('motorcycle',           32, 16, 'vehicle', 7, True, False, (0, 0, 230)),
         CityscapesClass('bicycle',              33, 17, 'vehicle', 7, True, False, (0, 0, 230)),
-        CityscapesClass('roadmark',             34, 255, 'vehicle', 7, False, True, (0, 0, 0)),
+        CityscapesClass('roadmark',             34, 255, 'vehicle', 7, True, False, (0, 0, 0)),
         CityscapesClass('busstop',              35, 18, 'vehicle', 7, False, True, (211, 211, 211)),
         CityscapesClass('license plate',        -1, 255, 'vehicle', 7, False, True, (0, 0, 142)),
 
@@ -74,12 +74,12 @@ class Cityscapes(data.Dataset):
     #train_id_to_color = np.array(train_id_to_color)
     #id_to_train_id = np.array([c.category_id for c in classes], dtype='uint8') - 1
 
-    def __init__(self, root, split='train', mode='fine', target_type='semantic', transform=None):
+    def __init__(self, root, split='train', mode='coarse', target_type='semantic', transform=None):
 
         self.root = os.path.expanduser(root)
-        self.mode = 'gtFine'
+        self.mode = 'gtCoarse'
         self.target_type = target_type
-        self.images_dir = os.path.join(self.root, 'leftImg8bit', split)
+        self.images_dir = os.path.join(self.root, 'leftImg8bit_trainextra', split)
 
         self.targets_dir = os.path.join(self.root, self.mode, split)
         self.transform = transform
@@ -88,7 +88,7 @@ class Cityscapes(data.Dataset):
         self.images = []
         self.targets = []
 
-        if split not in ['train', 'test', 'val']:
+        if split not in ['train', 'val']:
             raise ValueError('Invalid split for mode! Please use split="train", split="test"'
                              ' or split="val"')
 
